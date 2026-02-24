@@ -34,11 +34,13 @@ async function joinRoom() {
 }
 
 socket.on("existing-users", users => {
-  users.forEach(userId => createPeer(userId, true));
+  users.forEach(userId => {
+    createPeer(userId, true); // YOU initiate
+  });
 });
 
 socket.on("new-user", userId => {
-  createPeer(userId, true);
+  createPeer(userId, false); // Wait for their offer
 });
 
 socket.on("offer", async ({ offer, from }) => {
@@ -95,10 +97,14 @@ function createPeer(userId, initiator) {
   };
 
   if (initiator) {
-    pc.createOffer().then(offer => {
-      pc.setLocalDescription(offer);
-      socket.emit("offer", { offer, to: userId });
-    });
+    pc.createOffer()
+      .then(offer => pc.setLocalDescription(offer))
+      .then(() => {
+        socket.emit("offer", {
+          offer: pc.localDescription,
+          to: userId
+        });
+      });
   }
 }
 
