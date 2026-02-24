@@ -2,14 +2,106 @@
 <html>
 <head>
   <title>WebRTC Room</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+    }
+
+    #joinScreen {
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    #joinScreen input {
+      padding: 12px;
+      width: 250px;
+      border-radius: 8px;
+      border: none;
+      font-size: 16px;
+    }
+
+    #joinScreen button {
+      padding: 12px 25px;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #joinScreen button:hover {
+      background: #2563eb;
+    }
+
+    #roomContainer {
+      display: none;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #videos {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 10px;
+      padding: 15px;
+    }
+
+    video {
+      width: 100%;
+      height: 250px;
+      object-fit: cover;
+      border-radius: 12px;
+      background: black;
+    }
+
+    #controls {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 15px;
+      background: #1e293b;
+    }
+
+    #controls button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .muteBtn { background: #ef4444; color: white; }
+    .cameraBtn { background: #10b981; color: white; }
+  </style>
+
 </head>
 <body>
 
-<h2>Join Room</h2>
-<input id="roomId" placeholder="Enter Room ID" />
-<button onclick="joinRoom()">Join</button>
+<div id="joinScreen">
+  <h2>Join WebRTC Room</h2>
+  <input id="roomId" placeholder="Enter Room ID" />
+  <button onclick="joinRoom()">Join Room</button>
+</div>
 
-<div id="videos"></div>
+<div id="roomContainer">
+  <div id="videos"></div>
+
+  <div id="controls">
+    <button class="muteBtn" onclick="toggleMute()">Mute</button>
+    <button class="cameraBtn" onclick="toggleCamera()">Camera Off</button>
+  </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -17,11 +109,16 @@
 const socket = io();
 const peers = {};
 let localStream;
+let isMuted = false;
+let isCameraOff = false;
 
 async function joinRoom() {
 
   const roomId = document.getElementById("roomId").value;
   if (!roomId) return alert("Enter Room ID");
+
+  document.getElementById("joinScreen").style.display = "none";
+  document.getElementById("roomContainer").style.display = "flex";
 
   localStream = await navigator.mediaDevices.getUserMedia({
     video: true,
@@ -35,12 +132,12 @@ async function joinRoom() {
 
 socket.on("existing-users", users => {
   users.forEach(userId => {
-    createPeer(userId, true); // YOU initiate
+    createPeer(userId, true);
   });
 });
 
 socket.on("new-user", userId => {
-  createPeer(userId, false); // Wait for their offer
+  createPeer(userId, false);
 });
 
 socket.on("offer", async ({ offer, from }) => {
@@ -116,9 +213,22 @@ function addVideo(stream, id) {
   video.srcObject = stream;
   video.autoplay = true;
   video.playsInline = true;
-  video.width = 250;
 
   document.getElementById("videos").appendChild(video);
+}
+
+function toggleMute() {
+  isMuted = !isMuted;
+  localStream.getAudioTracks().forEach(track => {
+    track.enabled = !isMuted;
+  });
+}
+
+function toggleCamera() {
+  isCameraOff = !isCameraOff;
+  localStream.getVideoTracks().forEach(track => {
+    track.enabled = !isCameraOff;
+  });
 }
 
 </script>
