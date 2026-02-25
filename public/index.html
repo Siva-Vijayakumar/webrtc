@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html>
 <head>
   <title>WebRTC Room</title>
@@ -225,6 +225,445 @@ function createPeer(userId, initiator) {
       });
   }
 }
+function addVideo(stream, id) {
+  if (document.getElementById(id)) return;
+
+  const wrapper = document.createElement("div");
+  wrapper.id = id;
+  wrapper.style.position = "relative";
+  wrapper.style.width = "100%";
+  wrapper.style.aspectRatio = "16 / 9";
+  wrapper.style.background = "black";
+  wrapper.style.borderRadius = "12px";
+  wrapper.style.overflow = "hidden";
+
+  const video = document.createElement("video");
+  video.srcObject = stream;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.style.width = "100%";
+  video.style.height = "100%";
+  video.style.objectFit = "cover";
+
+  wrapper.appendChild(video);
+  document.getElementById("videos").appendChild(wrapper);
+}
+
+function toggleMute() {
+  isMuted = !isMuted;
+  localStream.getAudioTracks().forEach(track => {
+    track.enabled = !isMuted;
+  });
+}
+
+function toggleCamera() {
+  isCameraOff = !isCameraOff;
+  localStream.getVideoTracks().forEach(track => {
+    track.enabled = !isCameraOff;
+  });
+}
+
+</script>
+
+</body>
+</html> -->
+
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> -->
+  <title>WebRTC Room</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+    }
+
+    #joinScreen {
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    #joinScreen input {
+      padding: 12px;
+      width: 250px;
+      border-radius: 8px;
+      border: none;
+      font-size: 16px;
+    }
+
+    #joinScreen button {
+      padding: 12px 25px;
+      border: none;
+      border-radius: 8px;
+      background: #3b82f6;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    #joinScreen button:hover {
+      background: #2563eb;
+    }
+
+    #roomContainer {
+      display: none;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #videos {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 15px;
+  padding: 15px;
+  box-sizing: border-box;
+}
+
+    video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* keeps aspect ratio */
+  border-radius: 12px;
+  background: black;
+}
+
+    #controls {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      padding: 15px;
+      background: #1e293b;
+    }
+
+    #controls button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .muteBtn { background: #ef4444; color: white; }
+    .cameraBtn { background: #10b981; color: white; }
+  </style>
+
+</head>
+<body>
+
+<div id="joinScreen">
+  <h2>Join WebRTC Room</h2>
+  <input id="roomId" placeholder="Enter Room ID" />
+  <button onclick="joinRoom()">Join Room</button>
+</div>
+
+<div id="roomContainer">
+  <div id="videos"></div>
+  <div id="controls">
+    <button class="muteBtn" onclick="toggleMute()">Mute</button>
+    <button class="cameraBtn" onclick="toggleCamera()">Camera Off</button>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+
+const socket = io();
+const peers = {};
+let localStream;
+let isMuted = false;
+let isCameraOff = false;
+
+let bitrateChart;
+let packetChart;
+
+function initCharts() {
+  const bitrateCtx = document.getElementById("bitrateChart").getContext("2d");
+  const packetCtx = document.getElementById("packetChart").getContext("2d");
+
+  bitrateChart = new Chart(bitrateCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "Bitrate (kbps)",
+        data: [],
+        borderColor: "#3b82f6",
+        backgroundColor: "rgba(59,130,246,0.2)",
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      scales: {
+        x: { ticks: { color: "white" } },
+        y: { ticks: { color: "white" } }
+      },
+      plugins: {
+        legend: { labels: { color: "white" } }
+      }
+    }
+  });
+
+  packetChart = new Chart(packetCtx, {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [
+        {
+          label: "Packets Sent",
+          data: [],
+          borderColor: "#10b981",
+          tension: 0.3
+        },
+        {
+          label: "Packets Received",
+          data: [],
+          borderColor: "#ef4444",
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      scales: {
+        x: { ticks: { color: "white" } },
+        y: { ticks: { color: "white" } }
+      },
+      plugins: {
+        legend: { labels: { color: "white" } }
+      }
+    }
+  });
+}
+
+function updateCharts(bitrate, sent, received) {
+  const now = new Date().toLocaleTimeString();
+
+  // Keep last 20 points
+  if (bitrateChart.data.labels.length > 20) {
+    bitrateChart.data.labels.shift();
+    bitrateChart.data.datasets[0].data.shift();
+    packetChart.data.labels.shift();
+    packetChart.data.datasets[0].data.shift();
+    packetChart.data.datasets[1].data.shift();
+  }
+
+  bitrateChart.data.labels.push(now);
+  bitrateChart.data.datasets[0].data.push(parseFloat(bitrate));
+
+  packetChart.data.labels.push(now);
+  packetChart.data.datasets[0].data.push(sent);
+  packetChart.data.datasets[1].data.push(received);
+
+  bitrateChart.update();
+  packetChart.update();
+}
+
+async function joinRoom() {
+
+  const roomId = document.getElementById("roomId").value;
+  if (!roomId) return alert("Enter Room ID");
+
+  document.getElementById("joinScreen").style.display = "none";
+  document.getElementById("roomContainer").style.display = "flex";
+  // initCharts();
+
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: true
+  });
+
+  addVideo(localStream, "local");
+
+  socket.emit("join-room", roomId);
+}
+
+socket.on("existing-users", users => {
+  users.forEach(userId => {
+    createPeer(userId, true);
+  });
+});
+
+socket.on("new-user", userId => {
+  createPeer(userId, false);
+});
+
+socket.on("offer", async ({ offer, from }) => {
+
+  if (!peers[from]) {
+    createPeer(from, false);
+  }
+
+  await peers[from].setRemoteDescription(new RTCSessionDescription(offer));
+
+  const answer = await peers[from].createAnswer();
+  await peers[from].setLocalDescription(answer);
+
+  socket.emit("answer", {
+    answer: peers[from].localDescription,
+    to: from
+  });
+});
+
+socket.on("answer", async ({ answer, from }) => {
+  await peers[from].setRemoteDescription(
+    new RTCSessionDescription(answer)
+  );
+});
+
+socket.on("ice-candidate", async ({ candidate, from }) => {
+  if (peers[from]) {
+    await peers[from].addIceCandidate(
+      new RTCIceCandidate(candidate)
+    );
+  }
+});
+
+socket.on("user-left", userId => {
+  if (peers[userId]) {
+    peers[userId].close();
+    delete peers[userId];
+    document.getElementById(userId)?.remove();
+  }
+});
+
+function createPeer(userId, initiator) {
+
+  if (peers[userId]) return;
+
+  const pc = new RTCPeerConnection({
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { 
+      urls: "turn:openrelay.metered.ca:443?transport=tcp", 
+      username: "openrelayproject", 
+      credential: "openrelayproject" 
+    }
+  ]
+});
+
+  peers[userId] = pc;
+
+  localStream.getTracks().forEach(track =>
+    pc.addTrack(track, localStream)
+  );
+
+  pc.ontrack = event => {
+    addVideo(event.streams[0], userId);
+  };
+
+  pc.onicecandidate = event => {
+    if (event.candidate) {
+      socket.emit("ice-candidate", {
+        candidate: event.candidate,
+        to: userId
+      });
+    }
+  };
+
+  monitorConnection(pc, userId, document.getElementById("roomId").value);
+  if (initiator) {
+    pc.createOffer()
+      .then(offer => pc.setLocalDescription(offer))
+      .then(() => {
+        socket.emit("offer", {
+          offer: pc.localDescription,
+          to: userId
+        });
+      });
+  }
+}
+
+function monitorConnection(pc, userId, roomId) {
+
+  let lastBytesSent = 0;
+  let lastTimestamp = 0;
+
+  setInterval(async () => {
+
+    if (pc.connectionState === "closed") return;
+
+    const stats = await pc.getStats();
+    let packetsSent = 0;
+    let packetsReceived = 0;
+    let localIP = "";
+    let remoteIP = "";
+    let bitrate = 0;
+
+    stats.forEach(report => {
+
+      if (report.type === "outbound-rtp" && report.kind === "video") {
+        packetsSent = report.packetsSent || 0;
+
+        if (lastTimestamp) {
+          const bytes = report.bytesSent - lastBytesSent;
+          const time = report.timestamp - lastTimestamp;
+          bitrate = ((bytes * 8) / time).toFixed(2);
+        }
+
+        lastBytesSent = report.bytesSent;
+        lastTimestamp = report.timestamp;
+      }
+
+      if (report.type === "inbound-rtp" && report.kind === "video") {
+        packetsReceived = report.packetsReceived || 0;
+      }
+
+      if (report.type === "candidate-pair" && report.state === "succeeded") {
+        const local = stats.get(report.localCandidateId);
+        const remote = stats.get(report.remoteCandidateId);
+
+        if (local?.address) localIP = local.address;
+        if (remote?.address) remoteIP = remote.address;
+      }
+    });
+
+    // console.log("===== LIVE PACKET FLOW =====");
+    // console.log("Connection State:", pc.connectionState);
+    // console.log("ICE State:", pc.iceConnectionState);
+    // console.log("Packets Sent:", packetsSent);
+    // console.log("Packets Received:", packetsReceived);
+    // console.log("Bitrate:", bitrate, "kbps");
+    // console.log("Local IP:", localIP);
+    // console.log("Remote IP:", remoteIP);
+    // updateCharts(bitrate, packetsSent, packetsReceived);
+
+    await fetch("/api/metrics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        socketId: socket.id,
+        roomId: roomId,
+        data: {
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          packetsSent,
+          packetsReceived,
+          bitrate,
+          localIP,
+          remoteIP,
+          timestamp: new Date().toLocaleTimeString()
+        }
+      })
+    });
+
+  }, 1000);
+}
+
+
 function addVideo(stream, id) {
   if (document.getElementById(id)) return;
 
