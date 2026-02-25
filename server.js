@@ -7,6 +7,37 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static("public"));
+app.use(express.json());
+
+/* =========================
+   In-Memory Metrics Store
+========================= */
+const metricsStore = {};
+
+/* =========================
+   Metrics API Endpoint
+========================= */
+app.post("/metrics", (req, res) => {
+  const { socketId, roomId, data } = req.body;
+
+  if (!metricsStore[roomId]) {
+    metricsStore[roomId] = {};
+  }
+
+  metricsStore[roomId][socketId] = data;
+
+  io.emit("metrics-update", metricsStore);
+
+  res.json({ status: "ok" });
+});
+
+app.get("/metrics", (req, res) => {
+  res.json(metricsStore);
+});
+
+/* =========================
+   Socket Signaling
+========================= */
 
 io.on("connection", socket => {
 
@@ -18,24 +49,10 @@ io.on("connection", socket => {
 
     socket.to(roomId).emit("new-user", socket.id);
 
-    socket.on("offer", ({ offer, to }) => {
-      socket.to(to).emit("offer", { offer, from: socket.id });
-    });
-
-    socket.on("answer", ({ answer, to }) => {
-      socket.to(to).emit("answer", { answer, from: socket.id });
-    });
-
-    socket.on("ice-candidate", ({ candidate, to }) => {
-      socket.to(to).emit("ice-candidate", { candidate, from: socket.id });
-    });
-
     socket.on("disconnect", () => {
       socket.to(roomId).emit("user-left", socket.id);
     });
-
   });
-
 });
 
 server.listen(3000, () => console.log("Server running on http://localhost:3000"));
