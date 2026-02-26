@@ -547,10 +547,17 @@ function createPeer(userId, initiator) {
   const pc = new RTCPeerConnection({
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
-    { 
-      urls: "free.expressturn.com:3478", 
-      username: "000000002087442050", 
-      credential: "i1REHOlFwG/I3q8hMz4Ris7qhuA=" 
+    
+      {
+      urls: "turn:global.relay.metered.ca:80",
+      username: "9d92b71a9ebfc81dc0ddfe69",
+      credential: "X6o6KqJaTRAXHV8J"
+    },
+    {
+      // This version is best for strict firewalls (Port 443 + TCP)
+      urls: "turns:global.relay.metered.ca:443?transport=tcp",
+      username: "9d92b71a9ebfc81dc0ddfe69",
+      credential: "X6o6KqJaTRAXHV8J"
     }
   ]
 });
